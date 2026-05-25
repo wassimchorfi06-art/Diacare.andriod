@@ -21,6 +21,11 @@ jobs:
       - name: Unzip project
         run: unzip -q DiaCare-Android-final.zip
 
+      - name: Download gradle wrapper jar
+        run: |
+          curl -L "https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar" \
+          -o diacare-android/android-project/gradle/wrapper/gradle-wrapper.jar
+
       - name: Copy www to assets
         run: |
           mkdir -p diacare-android/android-project/app/src/main/assets/www
