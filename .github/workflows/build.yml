@@ -18,41 +18,26 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Show structure
-        run: find . -maxdepth 3 -type f | grep -v ".git"
+      - name: Unzip project
+        run: |
+          unzip -q DiaCare-Android-renamed.zip
+          ls -la
 
       - name: Copy www to assets
         run: |
-          mkdir -p android-project/app/src/main/assets/www
-          if [ -d "www" ]; then
-            cp -r www/. android-project/app/src/main/assets/www/
-          elif [ -d "diacare-android/www" ]; then
-            cp -r diacare-android/www/. android-project/app/src/main/assets/www/
-          else
-            echo "www not found, checking structure..."
-            find . -name "index.html"
-          fi
+          mkdir -p diacare-android/android-project/app/src/main/assets/www
+          cp -r diacare-android/www/. diacare-android/android-project/app/src/main/assets/www/
 
       - name: Make gradlew executable
-        run: |
-          if [ -f "android-project/gradlew" ]; then
-            chmod +x android-project/gradlew
-          elif [ -f "diacare-android/android-project/gradlew" ]; then
-            chmod +x diacare-android/android-project/gradlew
-          fi
+        run: chmod +x diacare-android/android-project/gradlew
 
       - name: Build APK
         run: |
-          if [ -d "android-project" ]; then
-            cd android-project && ./gradlew assembleDebug
-          else
-            cd diacare-android/android-project && ./gradlew assembleDebug
-          fi
+          cd diacare-android/android-project
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DiaCare-APK
-          path: |
-            android-project/app/build/outputs/apk/debug/app-debug.apk
-            diacare-android/android-project/app/build/outputs/apk/debug/app-debug.apk
+          path: diacare-android/android-project/app/build/outputs/apk/debug/app-debug.apk
