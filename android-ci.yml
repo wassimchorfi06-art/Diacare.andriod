@@ -1,0 +1,162 @@
+name: 🚀 DiaCare Android CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ─────────────────────────────────────────
+  # JOB 1: Build Debug APK (على كل push)
+  # ─────────────────────────────────────────
+  build-debug:
+    name: 🔨 Build Debug APK
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Install npm dependencies
+        run: npm ci
+
+      - name: 🔄 Sync Capacitor (copy www → android assets)
+        run: npx cap sync android
+
+      - name: 🔑 Grant Gradle execute permission
+        run: chmod +x android-project/gradlew
+
+      - name: 🏗️ Build Debug APK
+        working-directory: android-project
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: 📤 Upload Debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diacare-debug-${{ github.run_number }}
+          path: android-project/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  # ─────────────────────────────────────────
+  # JOB 2: Build Release APK (فقط على Tags)
+  # ─────────────────────────────────────────
+  build-release:
+    name: 🎯 Build Release APK
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Install npm dependencies
+        run: npm ci
+
+      - name: 🔄 Sync Capacitor
+        run: npx cap sync android
+
+      - name: 🔑 Grant Gradle execute permission
+        run: chmod +x android-project/gradlew
+
+      # فك تشفير الـ Keystore من GitHub Secrets
+      - name: 🔐 Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android-project/app/diacare-release.jks
+
+      # بناء APK موقّع
+      - name: 🏗️ Build Release APK (Signed)
+        working-directory: android-project
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/app/diacare-release.jks \
+            -Pandroid.injected.signing.store.password=$SIGNING_STORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$SIGNING_KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$SIGNING_KEY_PASSWORD \
+            --no-daemon
+
+      # بناء AAB للـ Google Play
+      - name: 📦 Build Release AAB (Google Play)
+        working-directory: android-project
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/app/diacare-release.jks \
+            -Pandroid.injected.signing.store.password=$SIGNING_STORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$SIGNING_KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$SIGNING_KEY_PASSWORD \
+            --no-daemon
+
+      - name: 📤 Upload Release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diacare-release-${{ github.ref_name }}
+          path: |
+            android-project/app/build/outputs/apk/release/app-release.apk
+            android-project/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      # إنشاء GitHub Release تلقائي مع الـ APK
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "DiaCare ${{ github.ref_name }}"
+          body: |
+            ## 📱 DiaCare ${{ github.ref_name }}
+
+            ### التغييرات في هذا الإصدار
+            > راجع [CHANGELOG.md](./CHANGELOG.md) للتفاصيل.
+
+            ### 📥 التحميل
+            - **`app-release.apk`** — للتثبيت المباشر على الجهاز
+            - **`app-release.aab`** — لرفع على Google Play Store
+
+            ### متطلبات النظام
+            - Android 7.0+ (API 24)
+          files: |
+            android-project/app/build/outputs/apk/release/app-release.apk
+            android-project/app/build/outputs/bundle/release/app-release.aab
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
